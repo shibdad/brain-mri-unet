@@ -1,0 +1,34 @@
+# Data (downloaded separately — never commit medical images / large archives)
+data/
+*.zip
+*.tar
+*.tar.gz
+
+# Model checkpoints and run outputs
+runs/
+*.pt
+*.pth
+*.onnx
+
+# Kaggle / secrets
+kaggle.json
+.env
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Allow small README/demo assets even though images are otherwise large
+!assets/*.png
+!assets/*.gif

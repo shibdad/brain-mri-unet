@@ -1,0 +1,17 @@
+# Core deep learning
+torch>=2.1
+torchvision>=0.16
+
+# Data / image IO and augmentation
+numpy>=1.24
+opencv-python>=4.8
+pillow>=10.0
+tifffile>=2023.7
+albumentations>=1.3
+
+# Utilities, metrics, plotting
+tqdm>=4.65
+matplotlib>=3.7
+
+# Dataset download (Kaggle API) — only needed to fetch the data
+kaggle>=1.5
