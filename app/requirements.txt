@@ -1,0 +1,8 @@
+# CPU-only — Hugging Face Spaces free tier has no GPU.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.2
+gradio==4.44.0
+huggingface_hub==0.24.6
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+pillow==10.4.0
