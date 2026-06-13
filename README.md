@@ -27,9 +27,15 @@ tumor **contour** over the image:
 The three input channels are three MRI sequences (pre-contrast / FLAIR /
 post-contrast); the output is a binary tumor mask.
 
-<!-- After a training run, the Colab notebook saves these figures to assets/ -->
-<!-- ![sample predictions](assets/sample_predictions.png) -->
-<!-- ![training curves](assets/training_curves.png) -->
+### Example output
+
+Held-out **test** slices — radiologist ground truth (red) vs. model prediction (green):
+
+![sample predictions](assets/sample_predictions.png)
+
+### Training curves
+
+![training curves](assets/training_curves.png)
 
 ## Dataset
 
@@ -50,15 +56,16 @@ across splits. Metrics: **Dice** and **IoU**. See
 
 ## Results
 
-Run the Colab notebook, then fill this in with your numbers:
+U-Net trained for 50 epochs on a single GPU. The checkpoint is selected by best
+**validation Dice** (epoch 45). The split is patient-level, so the test set is
+patients the model never saw during training.
 
 | Split | Dice | IoU |
 |-------|------|-----|
-| Validation | _TBD_ | _TBD_ |
-| Test | _TBD_ | _TBD_ |
+| Validation | **0.9160** | 0.8845 |
+| Test | _pending_ | _pending_ |
 
-(Typical performance for this dataset/architecture is ~0.85–0.90 Dice on
-held-out patients.)
+<sub>Metrics are mean per-slice Dice / IoU at a 0.5 threshold.</sub>
 
 ## Repository structure
 
