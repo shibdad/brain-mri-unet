@@ -1,7 +1,8 @@
 # CPU-only — Hugging Face Spaces builds on Python 3.13, no GPU.
+# pillow/numpy are left unpinned on purpose: gradio (pinned by the Space's
+# sdk_version) constrains pillow<11, and torch/opencv pull numpy, so pip resolves
+# compatible versions itself. Pinning them here only creates conflicts.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.12.0
 gradio==4.44.0
 opencv-python-headless>=4.11.0
-numpy>=2.1.0
-pillow>=11.0.0
