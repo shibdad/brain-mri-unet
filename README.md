@@ -1,8 +1,10 @@
 # Brain MRI Tumor Segmentation (U-Net)
 
-A U-Net that contours lower-grade glioma in brain MRI — built from scratch in PyTorch and scoring **0.914 Dice on held-out patients the model never saw during training**.
+A U-Net that contours lower-grade glioma in brain MRI — built from scratch in PyTorch, scoring **0.914 Dice on held-out patients the model never saw during training**.
 
-I work on clinical ML, so I wanted a clean, end-to-end version of the step that actually matters in radiology: turning a scan into a structured region a clinician can act on. The model takes a FLAIR MRI slice, predicts a per-pixel tumor mask, and draws the contour back onto the image.
+I do clinical ML for my day job, but I'd never built an image model end-to-end and I wanted to actually understand the pieces instead of importing them. So I picked the one task in radiology that I find genuinely cool: taking a scan and turning it into a region you can point at. The model takes a brain MRI slice, predicts which pixels are tumor, and draws the outline back onto the image.
+
+If you've never touched segmentation, here's the one-sentence version: instead of classifying a *whole* image ("tumor / no tumor"), you classify *every pixel* — and the outline of all the "tumor" pixels is the contour. Drawing those contours by hand is slow, so a model that proposes one is a nice time-saver for the person reviewing the scan.
 
 ### Example output
 
@@ -14,30 +16,36 @@ Held-out test slices — radiologist ground truth in red, model prediction in gr
 
 ## Results
 
-Trained for 50 epochs on a single GPU; the saved checkpoint is the best epoch by validation Dice. The train/validation/test split is done at the **patient** level rather than the slice level, so the test numbers reflect performance on people the model never encountered.
+Trained for 50 epochs on a single GPU; the saved checkpoint is the best epoch by validation Dice.
 
 | Split | Dice | IoU |
 |-------|------|-----|
 | Validation | 0.916 | 0.885 |
 | Test | 0.914 | 0.885 |
 
-The gap between validation and test is essentially zero — which is the number I care about most. It means the network learned what a tumor looks like rather than memorizing slices.
+**Dice** is the number to watch here — it's the overlap between the predicted region and the real one (0 = no overlap, 1 = perfect). Mathematically it's the F1 score computed per pixel, which makes it a fair scoring method when the thing you're looking for is small. **IoU** is the same idea but stricter.
+
+The part I actually care about is that validation and test are basically tied (0.916 vs 0.914). That gap staying near zero is what tells me the network learned what a tumor looks like instead of memorizing the training slices — more on why that's not guaranteed below.
 
 ## How it works
 
-A standard U-Net — a ~31M-parameter encoder/decoder where skip connections carry fine spatial detail from the downsampling path straight into the upsampling path, which is what keeps the predicted boundary crisp. Input is the three co-registered MRI sequences (pre-contrast, FLAIR, post-contrast); output is a single binary tumor mask.
+A standard U-Net — a ~31M-parameter encoder/decoder. The encoder shrinks the image down while pulling out features; the decoder blows it back up to a full-resolution mask. The trick is the **skip connections** that wire each encoder stage straight across to its matching decoder stage — they carry the fine spatial detail that the downsampling throws away, which is what keeps the predicted edge crisp instead of a smeared blob. Input is the three co-registered MRI sequences (pre-contrast, FLAIR, post-contrast); output is a single binary tumor mask.
 
 Three decisions did most of the work:
 
-- **Patient-level splitting.** Neighboring MRI slices are near-duplicates. Split them at random and the same brain ends up in both train and test — your Dice looks great for the wrong reason. Assigning whole patients to a single split is the difference between an honest metric and a misleading one.
-- **BCE + Dice loss.** Tumor pixels are a small minority of every slice, so a plain pixel-wise loss happily predicts "all background" and scores high. Pairing binary cross-entropy with a Dice term keeps the rare positive pixels driving the gradient.
-- **Augmentation** — flips, rotations, grid distortion, brightness/contrast — to stretch ~110 patients into something the network won't overfit.
+- **Patient-level splitting.** This is the one that bit me conceptually. Neighboring MRI slices of the same brain look almost identical, so if you shuffle every slice and split randomly, near-duplicates land in both train and test — the model "sees" the test set during training and your Dice comes out beautiful and meaningless. The fix is to split by *patient*: every slice from one person goes entirely to train, val, or test. It's why the test number is trustworthy.
+- **BCE + Dice loss.** Tumor pixels are a tiny minority of every slice, so a plain pixel-wise loss is happy to predict "all background" and still score high. Pairing binary cross-entropy with a Dice term keeps those rare positive pixels actually driving the gradient.
+- **Augmentation** — flips, rotations, grid distortion, brightness/contrast — to stretch ~110 patients into enough variety that the network can't just overfit them.
 
-The full architecture walkthrough, and the things that bit me along the way, are in [`docs/how-it-was-built.md`](docs/how-it-was-built.md).
+The full architecture walkthrough, and the things that tripped me up, are in [`docs/how-it-was-built.md`](docs/how-it-was-built.md).
 
-## Why this matters
+## What I took away
 
-Contouring — outlining a structure on a scan — is manual, slow, and a genuine bottleneck in radiology and radiation-oncology workflows. A model that proposes the contour isn't there to replace the clinician; it hands them a starting point to accept or correct. That's the pattern I build toward in clinical work: put the model inside the workflow and keep the human in the loop.
+- Most of the "accuracy" in medical imaging is decided before the model — in how you split the data and which metric you trust. I could've had a great-looking 0.95 Dice that meant nothing if I'd split slices randomly, and I wouldn't have known.
+- Pixel accuracy is a trap when the target is rare. Dice/IoU are the honest numbers.
+- Building the U-Net by hand instead of importing one made the skip connections click in a way no diagram did — they're literally the difference between a sharp boundary and a blurry guess.
+
+Contouring (outlining a structure on a scan) is something radiologists and radiation-oncology teams do by hand a lot, so this is the kind of task where a model that hands over a first draft is genuinely useful — keep the human in the loop, let the model do the tedious first pass.
 
 ## Dataset
 
