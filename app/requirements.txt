@@ -6,6 +6,9 @@
 torch==2.12.0
 gradio==4.44.0
 opencv-python-headless>=4.11.0
+# gradio 4.44 imports HfFolder, which huggingface_hub 1.x removed. Stay on 0.x
+# (the base image needs >=0.30) so the import resolves.
+huggingface_hub>=0.30,<1.0
 # Python 3.13 removed the stdlib `audioop` module that gradio's pydub dependency
 # imports; this backport restores it.
 audioop-lts; python_version >= "3.13"
