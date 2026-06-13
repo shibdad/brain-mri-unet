@@ -2,6 +2,8 @@
 
 A U-Net that contours lower-grade glioma in brain MRI — built from scratch in PyTorch, scoring **0.914 Dice on held-out patients the model never saw during training**.
 
+**[Try the live demo →](https://huggingface.co/spaces/shibdaddev/brain-mri-tumor-contouring)** — pick an example slice (or upload your own) and watch it draw the contour.
+
 I do clinical ML for my day job, but I'd never built an image model end-to-end and I wanted to actually understand the pieces instead of importing them. So I picked the one task in radiology that I find genuinely cool: taking a scan and turning it into a region you can point at. The model takes a brain MRI slice, predicts which pixels are tumor, and draws the outline back onto the image.
 
 If you've never touched segmentation, here's the one-sentence version: instead of classifying a *whole* image ("tumor / no tumor"), you classify *every pixel* — and the outline of all the "tumor" pixels is the contour. Drawing those contours by hand is slow, so a model that proposes one is a nice time-saver for the person reviewing the scan.
@@ -94,7 +96,7 @@ app/              interactive demo (in progress)
 
 - [x] U-Net training pipeline, patient-level evaluation, Colab notebook
 - [x] Inference + contour-overlay API
-- [ ] Interactive web demo — upload a slice, get the contour back (Gradio on Hugging Face Spaces)
+- [x] Interactive web demo — upload a slice, get the contour back ([Gradio on Hugging Face Spaces](https://huggingface.co/spaces/shibdaddev/brain-mri-tumor-contouring))
 - [ ] Pretrained-encoder backbone for a few more Dice points
 - [ ] ONNX export for in-browser inference
 
