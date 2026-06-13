@@ -1,14 +1,8 @@
-# CPU-only — Hugging Face Spaces builds on Python 3.13, no GPU.
-# pillow/numpy are left unpinned on purpose: gradio (pinned by the Space's
-# sdk_version) constrains pillow<11, and torch/opencv pull numpy, so pip resolves
-# compatible versions itself. Pinning them here only creates conflicts.
+# CPU-only — Hugging Face Spaces has no GPU on the free tier.
+# gradio itself is installed by the Space (from the README sdk), so it's not
+# pinned here — that lets HF use a current gradio whose client doesn't hit the
+# json-schema bug that crashed the old 4.44 build.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.12.0
-gradio==4.44.0
 opencv-python-headless>=4.11.0
-# gradio 4.44 imports HfFolder, which huggingface_hub 1.x removed. Stay on 0.x
-# (the base image needs >=0.30) so the import resolves.
-huggingface_hub>=0.30,<1.0
-# Python 3.13 removed the stdlib `audioop` module that gradio's pydub dependency
-# imports; this backport restores it.
-audioop-lts; python_version >= "3.13"
+huggingface_hub

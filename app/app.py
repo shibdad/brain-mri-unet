@@ -74,7 +74,7 @@ demo = gr.Interface(
         "The slider is the probability cutoff for calling a pixel 'tumor' — "
         "raise it to be stricter. Research and education only; not for clinical use."
     ),
-    allow_flagging="never",
+    flagging_mode="never",  # gradio 5 name for the old allow_flagging
 )
 
 if __name__ == "__main__":
