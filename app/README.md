@@ -31,13 +31,13 @@ downloads them.
 ```bash
 pip install huggingface_hub
 huggingface-cli login
-huggingface-cli upload shibdad/brain-mri-lgg-unet best_model.pt best_model.pt --repo-type model
+huggingface-cli upload shibdaddev/brain-mri-lgg-unet best_model.pt best_model.pt --repo-type model
 ```
 
-If you name the repo something other than `shibdad/brain-mri-lgg-unet`, set
+If you name the repo something other than `shibdaddev/brain-mri-lgg-unet`, set
 `HF_MODEL_REPO` in the Space's settings to match.
 
-**2. Create a Gradio Space** (`shibdad/brain-mri-tumor-contouring`, SDK: Gradio)
+**2. Create a Gradio Space** (`shibdaddev/brain-mri-tumor-contouring`, SDK: Gradio)
 and put these at its root:
 
 ```

@@ -29,7 +29,7 @@ for _p in (_HERE, os.path.dirname(_HERE)):
 from src.inference import load_model, predict_overlay  # noqa: E402
 
 DEVICE = "cpu"  # HF Spaces free tier is CPU-only; the model is small enough.
-HF_MODEL_REPO = os.environ.get("HF_MODEL_REPO", "shibdad/brain-mri-lgg-unet")
+HF_MODEL_REPO = os.environ.get("HF_MODEL_REPO", "shibdaddev/brain-mri-lgg-unet")
 
 
 def _resolve_weights() -> str:
