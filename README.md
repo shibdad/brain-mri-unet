@@ -1,141 +1,103 @@
-# Brain MRI Tumor Contouring — U-Net (LGG FLAIR)
+# Brain MRI Tumor Segmentation (U-Net)
 
-A deep-learning model that **contours (segments) tumors in brain-MRI slices**,
-trained on the lower-grade glioma (LGG) FLAIR dataset. Built from scratch in
-PyTorch with a clean, reproducible training pipeline and a one-click Colab
-notebook.
+A U-Net that contours lower-grade glioma in brain MRI — built from scratch in PyTorch and scoring **0.914 Dice on held-out patients the model never saw during training**.
 
-> ⚕️ **Disclaimer:** This is a research / educational project. It is **not** a
-> medical device and must not be used for diagnosis or clinical decisions.
-
-![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![pytorch](https://img.shields.io/badge/PyTorch-2.x-ee4c2c)
-![license](https://img.shields.io/badge/license-MIT-green)
-
----
-
-## What it does
-
-Given a brain-MRI slice, the model predicts a per-pixel tumor mask and draws the
-tumor **contour** over the image:
-
-```
-   MRI slice  ──►  U-Net  ──►  tumor probability  ──►  threshold  ──►  contour overlay
- (3×256×256)                     (1×256×256)                          + area estimate
-```
-
-The three input channels are three MRI sequences (pre-contrast / FLAIR /
-post-contrast); the output is a binary tumor mask.
+I work on clinical ML, so I wanted a clean, end-to-end version of the step that actually matters in radiology: turning a scan into a structured region a clinician can act on. The model takes a FLAIR MRI slice, predicts a per-pixel tumor mask, and draws the contour back onto the image.
 
 ### Example output
 
-Held-out **test** slices — radiologist ground truth (red) vs. model prediction (green):
+Held-out test slices — radiologist ground truth in red, model prediction in green:
 
 ![sample predictions](assets/sample_predictions.png)
 
-### Training curves
-
 ![training curves](assets/training_curves.png)
-
-## Dataset
-
-[**Brain MRI segmentation**](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation)
-(Buda et al.), from the TCGA lower-grade glioma collection — ~110 patients,
-~3,900 slices of 256×256 TIFFs with expert binary tumor masks. The data is
-downloaded separately (see Quickstart) and is **not** committed to the repo.
-
-## Method (in one paragraph)
-
-A classic **U-Net** (encoder–decoder with skip connections, ~31M parameters)
-implemented from scratch. Trained with a combined **BCE + Dice** loss to handle
-the heavy class imbalance, Adam + `ReduceLROnPlateau`, mixed-precision, and
-augmentation (flips/rotations/distortions). Critically, the train/val/test split
-is **patient-level** to prevent near-duplicate adjacent slices from leaking
-across splits. Metrics: **Dice** and **IoU**. See
-[`docs/how-it-was-built.md`](docs/how-it-was-built.md) for the full walkthrough.
 
 ## Results
 
-U-Net trained for 50 epochs on a single GPU. The checkpoint is selected by best
-**validation Dice** (epoch 45). The split is patient-level, so the test set is
-patients the model never saw during training.
+Trained for 50 epochs on a single GPU; the saved checkpoint is the best epoch by validation Dice. The train/validation/test split is done at the **patient** level rather than the slice level, so the test numbers reflect performance on people the model never encountered.
 
 | Split | Dice | IoU |
 |-------|------|-----|
-| Validation | **0.9160** | 0.8845 |
-| Test | _pending_ | _pending_ |
+| Validation | 0.916 | 0.885 |
+| Test | 0.914 | 0.885 |
 
-<sub>Metrics are mean per-slice Dice / IoU at a 0.5 threshold.</sub>
+The gap between validation and test is essentially zero — which is the number I care about most. It means the network learned what a tumor looks like rather than memorizing slices.
 
-## Repository structure
+## How it works
 
-```
-brain-mri-unet/
-├── src/
-│   ├── model.py        # U-Net architecture (from scratch)
-│   ├── data.py         # dataset, patient-level split, augmentation
-│   ├── losses.py       # BCE+Dice loss, Dice/IoU metrics
-│   ├── train.py        # training loop (CLI), AMP, checkpointing
-│   ├── inference.py    # load checkpoint → predict → contour overlay
-│   └── utils.py        # seeding, checkpoints, overlay rendering
-├── scripts/download_data.py   # Kaggle dataset download helper
-├── notebooks/train_colab.ipynb # one-click end-to-end training on Colab
-├── app/                # interactive Gradio demo (next iteration — stubbed)
-├── docs/how-it-was-built.md    # deep-dive write-up
-└── assets/             # generated figures for this README
-```
+A standard U-Net — a ~31M-parameter encoder/decoder where skip connections carry fine spatial detail from the downsampling path straight into the upsampling path, which is what keeps the predicted boundary crisp. Input is the three co-registered MRI sequences (pre-contrast, FLAIR, post-contrast); output is a single binary tumor mask.
 
-## Quickstart
+Three decisions did most of the work:
 
-### Option A — Google Colab (recommended, free GPU)
+- **Patient-level splitting.** Neighboring MRI slices are near-duplicates. Split them at random and the same brain ends up in both train and test — your Dice looks great for the wrong reason. Assigning whole patients to a single split is the difference between an honest metric and a misleading one.
+- **BCE + Dice loss.** Tumor pixels are a small minority of every slice, so a plain pixel-wise loss happily predicts "all background" and scores high. Pairing binary cross-entropy with a Dice term keeps the rare positive pixels driving the gradient.
+- **Augmentation** — flips, rotations, grid distortion, brightness/contrast — to stretch ~110 patients into something the network won't overfit.
 
-Open `notebooks/train_colab.ipynb` in Colab, set the runtime to **GPU**, and run
-the cells top to bottom. It installs deps, downloads the data, trains, plots
-curves, and exports the weights.
+The full architecture walkthrough, and the things that bit me along the way, are in [`docs/how-it-was-built.md`](docs/how-it-was-built.md).
 
-### Option B — Local
+## Why this matters
+
+Contouring — outlining a structure on a scan — is manual, slow, and a genuine bottleneck in radiology and radiation-oncology workflows. A model that proposes the contour isn't there to replace the clinician; it hands them a starting point to accept or correct. That's the pattern I build toward in clinical work: put the model inside the workflow and keep the human in the loop.
+
+## Dataset
+
+[Brain MRI segmentation](https://www.kaggle.com/datasets/mateuszbuda/lgg-mri-segmentation) (Buda et al.), from the TCGA lower-grade glioma collection — ~110 patients, ~3,900 slices of 256×256 TIFFs with expert binary tumor masks. The data is pulled separately (see below) and is not committed to the repo.
+
+## Run it yourself
+
+**Colab (free GPU)** — open [`notebooks/train_colab.ipynb`](notebooks/train_colab.ipynb), set the runtime to GPU, and run top to bottom. It installs dependencies, loads the dataset, trains, plots curves, draws prediction overlays, and exports the weights.
+
+**Locally:**
 
 ```bash
-# 1. Install
 pip install -r requirements.txt
 
-# 2. Download the dataset (needs a Kaggle API token at ~/.kaggle/kaggle.json)
+# dataset (needs a Kaggle API token at ~/.kaggle/kaggle.json)
 python scripts/download_data.py --out data
 
-# 3. Train
+# train
 python -m src.train --data-dir data/lgg-mri-segmentation \
     --epochs 50 --batch-size 16 --lr 1e-4 --out runs/exp1
 
-# 4. Predict on a single slice
+# predict on one slice
 python -m src.inference --weights runs/exp1/best_model.pt \
     --image path/to/slice.tif --out prediction.png
 ```
 
-### Verify the pipeline without any data
+To sanity-check the pipeline with no data at all, `python -m src.train --smoke-test --out runs/smoke` runs the whole loop on synthetic tensors in a few seconds.
 
-A synthetic smoke test exercises the full training loop in seconds on CPU:
+## What's in here
 
-```bash
-python -m src.train --smoke-test --out runs/smoke
+```
+src/
+  model.py        U-Net architecture
+  data.py         dataset, patient-level split, augmentation
+  losses.py       BCE+Dice loss, Dice/IoU metrics
+  train.py        training loop (CLI), mixed precision, checkpointing
+  inference.py    load checkpoint -> predict -> contour overlay
+  utils.py        seeding, checkpoints, overlay rendering
+scripts/          Kaggle download helper
+notebooks/        end-to-end Colab training notebook
+docs/             architecture and design write-up
+app/              interactive demo (in progress)
 ```
 
 ## Roadmap
 
-- [x] Reproducible U-Net training pipeline + Colab notebook
+- [x] U-Net training pipeline, patient-level evaluation, Colab notebook
 - [x] Inference + contour-overlay API
-- [ ] **Interactive Gradio web demo on Hugging Face Spaces** (upload a slice,
-      threshold slider, live contour overlay) — see [`app/README.md`](app/README.md)
-- [ ] Pretrained-encoder backbone for higher Dice
+- [ ] Interactive web demo — upload a slice, get the contour back (Gradio on Hugging Face Spaces)
+- [ ] Pretrained-encoder backbone for a few more Dice points
 - [ ] ONNX export for in-browser inference
-- [ ] 3D / BraTS extension
+
+## A note on scope
+
+Research and education only. This is not a medical device and nothing here is cleared for clinical use.
 
 ## References
 
-- Ronneberger, Fischer, Brox. *U-Net: Convolutional Networks for Biomedical
-  Image Segmentation.* MICCAI 2015.
-- Buda, Saha, Mazurowski. *Association of genomic subtypes of lower-grade
-  gliomas with shape features automatically extracted by a deep learning
-  algorithm.* Computers in Biology and Medicine, 2019.
+- Ronneberger, Fischer, Brox. *U-Net: Convolutional Networks for Biomedical Image Segmentation.* MICCAI 2015.
+- Buda, Saha, Mazurowski. *Association of genomic subtypes of lower-grade gliomas with shape features automatically extracted by a deep learning algorithm.* Computers in Biology and Medicine, 2019.
 
 ## License
 

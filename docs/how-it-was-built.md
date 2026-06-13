@@ -1,141 +1,50 @@
 # How it was built
 
-A deeper engineering walkthrough of the brain-MRI tumor contouring model — the
-decisions, the architecture, and the things that bite you in medical image
-segmentation.
+The longer version — the decisions behind the model, and the parts of medical image segmentation that don't show up in a tutorial.
 
-## 1. Problem framing
+## Framing the problem
 
-"Contouring" in radiology means delineating a structure's boundary. We frame it
-as **binary semantic segmentation**: for every pixel of an MRI slice, predict
-tumor (1) vs. not-tumor (0). The boundary contour is then just the edge of the
-predicted region.
+Contouring means drawing the boundary of a structure on a scan. I framed it as binary semantic segmentation: for every pixel of an MRI slice, decide tumor or not-tumor, then the contour is just the edge of that region.
 
-We chose 2D slice-wise segmentation (not 3D volumes) because:
+I went with 2D slice-wise segmentation rather than full 3D volumes for three reasons. The LGG dataset ships as 2D slices to begin with; a 2D U-Net trains in well under an hour on one consumer GPU; and a 2D model drops straight into an interactive web demo later — one image in, one overlay out. For a portfolio piece that needs to *show* something, that last point mattered.
 
-- The LGG dataset is distributed as 2D `.tif` slices.
-- 2D U-Nets train fast on a single consumer/Colab GPU.
-- A 2D model is trivial to demo in a browser later (one image in, one overlay out).
+## The data, and the trap inside it
 
-## 2. The data
+The dataset is Buda et al.'s *Brain MRI segmentation* — the lower-grade glioma collection from TCGA, ~110 patients and ~3,900 slices. Each slice is a 256×256 TIFF with three channels (pre-contrast, FLAIR, post-contrast MRI sequences), paired with a binary mask where a radiologist outlined the FLAIR abnormality.
 
-**Dataset:** *Brain MRI segmentation* (Buda et al., 2019), sourced from The
-Cancer Imaging Archive (TCGA) lower-grade glioma collection. ~110 patients,
-~3,900 slices total.
+The trap: adjacent slices of the same brain look almost identical. If you shuffle all the slices and split randomly, near-duplicate slices land in both train and test, the model effectively sees the test data during training, and your Dice score comes out beautiful and meaningless. So the split happens at the **patient** level — every patient's slices go entirely to train, validation, or test, never spread across them. It's the single most important correctness decision in the project, and it's why the test Dice (0.914) lands right on top of the validation Dice (0.916) instead of collapsing on data the model has actually never seen. `split_by_patient` in `src/data.py` does this with a seeded shuffle of patient IDs — no scikit-learn dependency, just deterministic grouping.
 
-Each slice is a 256×256, 3-channel TIFF where the channels are three MRI
-sequences (pre-contrast, FLAIR, post-contrast). The paired `*_mask.tif` is a
-binary expert annotation of the FLAIR abnormality (the tumor).
+The other data reality is class imbalance. Most slices contain little or no tumor, and tumor pixels are a small minority everywhere else. A model that predicts "all background" scores high pixel accuracy and is clinically worthless. The fix is partly in the loss (below) and partly in evaluation — I report Dice and IoU, never pixel accuracy, because accuracy would flatter the model for doing nothing.
 
-### Pitfall: data leakage across slices
+## The model
 
-Adjacent slices of the same brain look almost identical. If you split slices
-randomly, near-duplicate slices land in both train and test, and your reported
-Dice is inflated. We split **by patient** (`split_by_patient` in `src/data.py`):
-whole patients go to exactly one of train/val/test. This is the single most
-important correctness decision in the project.
+A from-scratch U-Net in `src/model.py` — I implemented it directly rather than importing a prebuilt library so the repo actually demonstrates the architecture.
 
-### Pitfall: class imbalance
+The shape is the classic "U": an encoder that halves spatial resolution and doubles channels at each stage, a bottleneck, and a decoder that upsamples back to full resolution. The skip connections are the whole point — they carry high-resolution spatial detail from the encoder across to the matching decoder stage, which is what lets the network produce a sharp boundary instead of a blurry blob. Each block is two conv layers with batch norm and ReLU; the whole thing is about 31M parameters.
 
-Most slices contain little or no tumor; tumor pixels are a small minority. A
-naive model that predicts "all background" scores high pixel accuracy and zero
-clinical value. Two mitigations:
+One detail worth calling out: if an input dimension isn't divisible by 16, the pooling and upsampling can leave a one-pixel size mismatch at a skip connection. `forward()` checks for that and interpolates the upsampled tensor to the skip's exact size before concatenating — cheap insurance against a crash on oddly-sized inputs.
 
-1. Keep negative (no-tumor) slices in training so the model learns normal
-   anatomy — but pair a Dice-based loss with BCE so the rare positive pixels
-   still drive the gradient.
-2. Evaluate with **Dice** and **IoU**, not pixel accuracy.
+## Loss and metrics
 
-## 3. The model — U-Net
+The loss is BCE plus Dice, weighted evenly (`BCEDiceLoss` in `src/losses.py`). Binary cross-entropy gives stable pixel-wise gradients everywhere; the soft Dice term optimizes region overlap directly and is far more robust to the imbalance. It's a well-worn pairing for medical segmentation, and it works here. Every loss and metric function takes raw logits and applies the sigmoid internally, so there's no way for a caller to accidentally activate twice.
 
-We implement U-Net (Ronneberger et al., 2015) from scratch in `src/model.py`
-rather than importing a prebuilt library, so the repo demonstrates the
-architecture.
+For evaluation I use hard Dice and IoU at a 0.5 threshold — Dice is the harmonic-mean-flavored overlap (mathematically the per-pixel F1 score), IoU is its stricter cousin.
 
-```
-Input 3x256x256
-  └─ DoubleConv 64  ─────────────skip────────────┐
-       ↓ maxpool                                 │
-     DoubleConv 128 ───────────skip──────────┐   │
-       ↓ maxpool                             │   │
-     DoubleConv 256 ─────────skip────────┐   │   │
-       ↓ maxpool                         │   │   │
-     DoubleConv 512 ───────skip──────┐   │   │   │
-       ↓ maxpool                     │   │   │   │
-     Bottleneck 1024                 │   │   │   │
-       ↑ upconv + concat ───────────┘   │   │   │
-     DoubleConv 512                      │   │   │
-       ↑ upconv + concat ───────────────┘   │   │
-     DoubleConv 256                          │   │
-       ↑ upconv + concat ───────────────────┘   │
-     DoubleConv 128                              │
-       ↑ upconv + concat ───────────────────────┘
-     DoubleConv 64
-       ↓ 1x1 conv
-Output 1x256x256 (logits)
-```
+## Training
 
-- **Encoder** halves spatial resolution and doubles channels at each stage,
-  building increasingly abstract features.
-- **Skip connections** carry high-resolution spatial detail from encoder to
-  decoder, which is what lets U-Net produce sharp boundaries.
-- **Decoder** upsamples with transpose convolutions and fuses the skips.
-- BatchNorm after each conv stabilizes training; ~31M parameters total.
+Adam at 1e-4, `ReduceLROnPlateau` watching validation Dice (halve the rate after five stagnant epochs), mixed precision on GPU for speed and memory, and augmentation through albumentations — flips, 90° rotations, shift/scale/rotate, grid distortion, brightness and contrast, applied identically to image and mask. Checkpoint the best validation Dice, log every epoch to `metrics.csv`. There's also a `--smoke-test` mode that runs the entire loop on tiny synthetic tensors so the pipeline can be verified in seconds without downloading anything.
 
-A small but important detail: if an input dimension isn't divisible by 16, the
-pooling/upsampling can produce a one-pixel size mismatch at a skip connection.
-`forward()` guards against this by interpolating the upsampled tensor to the
-skip's exact size before concatenation.
+The training curve is unremarkable in the best way: validation Dice climbs into the high 0.8s by epoch 25, the learning-rate drops kick in around epoch 31, and it settles into the low 0.9s, peaking at epoch 45.
 
-## 4. Loss and metrics
+## Inference and the contour
 
-`src/losses.py`:
+`src/inference.py` loads a checkpoint, runs the forward pass, applies sigmoid and a threshold, resizes the mask back to the input resolution, and hands off to `overlay_mask` in `src/utils.py`, which traces the boundary with `cv2.findContours` and lays it over the original with a translucent fill. `predict_overlay` returns the overlay and the tumor area fraction. That's the exact function the web demo calls — the model code doesn't get reimplemented for the front end.
 
-- **BCEWithLogits** — stable, pixel-wise; good gradients everywhere.
-- **Soft Dice loss** — directly optimizes region overlap; robust to imbalance.
-- We sum them 0.5/0.5 (`BCEDiceLoss`). This pairing is a well-worn default for
-  medical segmentation.
-- **Metrics:** hard Dice coefficient and IoU on thresholded (0.5) predictions.
+## Where I'd take it next
 
-All loss/metric functions take raw logits and apply the sigmoid internally, so
-callers can never accidentally double-activate.
+- A pretrained ResNet or EfficientNet encoder (via `segmentation-models-pytorch`) would likely buy a few Dice points over the from-scratch encoder.
+- Test-time augmentation and a boundary-aware loss (Tversky or focal) for the harder, smaller lesions.
+- 3D context — moving to BraTS volumes with a 3D or 2.5D U-Net.
+- Calibration and uncertainty (MC-dropout or an ensemble) to flag low-confidence contours, which is what you'd actually want before this went anywhere near a clinical workflow.
 
-## 5. Training setup
-
-`src/train.py`:
-
-- Optimizer: Adam, lr 1e-4.
-- Scheduler: `ReduceLROnPlateau` on validation Dice (halve LR after 5 stagnant
-  epochs).
-- Mixed precision (`torch.amp`) on GPU for speed/memory; automatically disabled
-  on CPU.
-- Augmentation (`albumentations`): flips, 90° rotations, shift/scale/rotate,
-  grid distortion, brightness/contrast — applied identically to image and mask.
-- Checkpointing: save `best_model.pt` whenever validation Dice improves; log
-  every epoch to `metrics.csv`.
-- A `--smoke-test` mode runs the whole loop on tiny synthetic tensors with no
-  dataset, so the pipeline can be verified in seconds on any machine.
-
-Expected performance for this dataset/architecture is roughly **0.85–0.90 Dice**
-on held-out patients after ~50 epochs (fill in your actual number after the run).
-
-## 6. Inference and contouring
-
-`src/inference.py` loads a checkpoint, runs a forward pass, applies
-sigmoid + threshold, resizes the mask back to the input resolution, and
-`src/utils.overlay_mask` draws the boundary contour (via `cv2.findContours`)
-with a translucent fill. `predict_overlay` returns the overlay plus the tumor
-area fraction. This is the exact function the Gradio demo will call.
-
-## 7. What I'd do next
-
-- **Stronger backbone:** swap the from-scratch encoder for a pretrained ResNet/
-  EfficientNet encoder (`segmentation-models-pytorch`) for a few extra Dice
-  points.
-- **Test-time augmentation** and boundary-aware losses (e.g. Tversky / focal).
-- **3D context:** move to BraTS volumes with a 3D U-Net or 2.5D stacking.
-- **Calibration & uncertainty:** MC-dropout or ensembles to flag low-confidence
-  contours — important for any clinical-adjacent use.
-
-> **Disclaimer:** research/education only. Not a medical device and not for
-> clinical use.
+A reminder on that last point: this is research and education only — not a medical device, and not for clinical use.

@@ -1,19 +1,8 @@
-# Interactive demo (next iteration)
+# Interactive demo (in progress)
 
-This folder will hold the **Gradio** web app that showcases the trained model on
-example brain-MRI slices, deployed for free on **Hugging Face Spaces**.
+This is where the web demo lives — a small Gradio app, hosted free on Hugging Face Spaces, that runs the trained model on example brain-MRI slices so anyone can see it work without cloning the repo.
 
-## Planned UX
-
-- Upload an MRI slice **or** pick from bundled example images.
-- A threshold slider to trade off sensitivity vs. specificity at inference time.
-- Output: the original slice with the predicted tumor **contour** overlaid, plus
-  the estimated tumor area fraction.
-
-## How it will be built
-
-The app reuses the inference API already in this repo — no model code is
-duplicated:
+The plan: upload an MRI slice (or pick a bundled example), adjust a threshold slider, and get back the original slice with the predicted tumor contour drawn on it plus the estimated tumor area. It reuses the inference code already in the repo — no model logic gets rewritten for the front end:
 
 ```python
 # app/app.py (planned)
@@ -38,12 +27,6 @@ if __name__ == "__main__":
     demo.launch()
 ```
 
-## Deployment plan (Hugging Face Spaces)
+Deploying is a matter of creating a Gradio Space, adding `app.py`, a slim `requirements.txt`, the `src/` package, the trained `best_model.pt`, and a few example slices — Spaces builds and serves it from there.
 
-1. Create a new **Gradio** Space.
-2. Add `app.py`, `requirements.txt` (torch + gradio + opencv + numpy), the `src/`
-   package, a small `best_model.pt`, and a few bundled `examples/`.
-3. Push — Spaces builds and serves the live demo automatically.
-
-> Status: **stubbed**. Train the model first (see the repo root README), then we
-> wire up `app.py` and deploy.
+Status: the model is trained and the inference API (`src/inference.py`) is already shaped for this. Next step is wiring up `app.py` and pushing the Space.
